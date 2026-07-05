@@ -1,0 +1,46 @@
+// WaveFlow host API — v1.
+//
+// Imports every plugin world pulls in. Plugins don't talk to the network,
+// the filesystem, or the host's log subsystem directly: those go through
+// `waveflow:host/*` so the host can permission-check, rate-limit, observe.
+// Copied verbatim from the host SDK.
+
+package waveflow:host@1.0.0;
+
+interface http {
+  record request {
+    method: string,
+    url: string,
+    headers: list<tuple<string, string>>,
+    body: option<list<u8>>,
+  }
+
+  record response {
+    status: u16,
+    headers: list<tuple<string, string>>,
+    body: list<u8>,
+  }
+
+  /// Outbound HTTP. The host validates `url` against the plugin's
+  /// `permissions.http` allowlist BEFORE dispatching. Redirects are NOT
+  /// followed (the guest sees the 3xx + `Location` and re-issues).
+  send: func(req: request) -> result<response, string>;
+}
+
+interface log {
+  enum level {
+    trace,
+    debug,
+    info,
+    warn,
+    error,
+  }
+
+  emit: func(level: level, message: string);
+}
+
+interface storage {
+  read-asset: func(path: string) -> result<list<u8>, string>;
+  read-state: func(key: string) -> result<option<list<u8>>, string>;
+  write-state: func(key: string, value: list<u8>) -> result<_, string>;
+}

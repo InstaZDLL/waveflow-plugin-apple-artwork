@@ -1,0 +1,28 @@
+schema_version = 1
+
+[plugin]
+id = "apple-artwork"
+name = "Apple Motion Artwork"
+version = "0.1.0"
+author = "InstaZDLL"
+world = "waveflow:metadata/v1"
+description = "Animated album covers (motion artwork) from Apple Music, rendered behind the now-playing view."
+homepage = "https://github.com/InstaZDLL/waveflow-plugin-apple-artwork"
+license = "MIT"
+
+[permissions]
+# The plugin fetches: the iTunes search API (album lookup), the Apple Music
+# web page + its JS bundles (anonymous token), the AMP catalogue API
+# (editorialVideo), and the motion m3u8 (to resolve a playable mp4). The
+# final mp4 is loaded by the app's <video>, NOT through the plugin — so it
+# doesn't need to be on this list.
+http = [
+  "https://itunes.apple.com/**",
+  "https://music.apple.com/**",
+  "https://amp-api.music.apple.com/**",
+  "https://mvod.itunes.apple.com/**",
+]
+storage_read = false
+# Caches resolved motion URLs + a negative sentinel + the anonymous token,
+# so a given album hits Apple at most once and the app stays Apple-friendly.
+storage_state = true

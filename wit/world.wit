@@ -1,0 +1,46 @@
+// WaveFlow metadata enricher world — v1 (WIT package 1.1.0).
+//
+// Copied from the host SDK (crates/plugin-sdk/wit/metadata) so the plugin
+// builds standalone. Plugins exporting this world enrich existing library
+// rows: artist biographies, similar artists, lyrics, artwork. This plugin
+// only implements the animated-artwork path (album-info -> motion-cover-*);
+// artist-info + lyrics return empty results.
+
+package waveflow:metadata@1.1.0;
+
+interface enricher {
+  record artist-details {
+    bio: option<string>,
+    image-url: option<string>,
+    similar: list<string>,
+  }
+
+  record album-details {
+    description: option<string>,
+    cover-url: option<string>,
+    track-count: option<u32>,
+    /// Looping video URL (HLS `.m3u8` or `.mp4`) for the square
+    /// animated cover, rendered behind the now-playing view. `none`
+    /// when the plugin has no motion artwork for this album.
+    motion-cover-url: option<string>,
+    /// Optional taller variant (lock-screen / expanded artwork
+    /// aspect). `none` falls back to `motion-cover-url`.
+    motion-cover-tall-url: option<string>,
+  }
+
+  record lyrics-line {
+    time-ms: option<u32>,
+    text: string,
+  }
+
+  artist-info: func(name: string) -> result<artist-details, string>;
+  album-info: func(artist: string, title: string) -> result<album-details, string>;
+  lyrics: func(artist: string, title: string) -> result<list<lyrics-line>, string>;
+}
+
+world plugin {
+  import waveflow:host/http@1.0.0;
+  import waveflow:host/log@1.0.0;
+  import waveflow:host/storage@1.0.0;
+  export enricher;
+}

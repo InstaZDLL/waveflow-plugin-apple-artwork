@@ -1,0 +1,46 @@
+# This crate is NOT part of any host workspace — it builds for
+# wasm32-wasip2 via `cargo component build`. The empty workspace marker
+# stops cargo's upward auto-discovery from attaching it to a parent.
+[workspace]
+
+[package]
+name = "waveflow-plugin-apple-artwork"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "WaveFlow plugin — animated album covers (motion artwork) from Apple Music"
+authors = ["InstaZDLL <github.105mh@8shield.net>"]
+publish = false
+
+# Component Model output. `cargo component build` wraps this cdylib into a
+# true wasm component via wasm-tools.
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+# Guest-side bindings runtime. `cargo component` generates the typed
+# bindings from `wit/` and this backs them at runtime.
+wit-bindgen-rt = { version = "0.44", features = ["bitflags"] }
+# Pure-Rust JSON for the iTunes + Apple Music API responses. No reqwest —
+# all HTTP is routed through the host's `waveflow:host/http` import.
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[package.metadata.component]
+package = "waveflow:apple-artwork"
+
+[package.metadata.component.target]
+path = "wit"
+world = "plugin"
+
+# cargo-component's wit-parser needs the host package pointed at
+# explicitly so `world.wit`'s `import waveflow:host/http@1.0.0;` resolves.
+[package.metadata.component.target.dependencies]
+"waveflow:host" = { path = "wit/deps/waveflow-host" }
+
+# Small release wasm — this ships as a downloadable plugin.
+[profile.release]
+opt-level = "s"
+strip = true
+lto = true
+codegen-units = 1
