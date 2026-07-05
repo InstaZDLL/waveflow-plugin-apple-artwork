@@ -342,9 +342,18 @@ fn find_jwt(js: &str) -> Option<String> {
 
 // ----- step 4: m3u8 → mp4 --------------------------------------------------
 
-/// Fetch an HLS master playlist and return the highest-resolution
-/// progressive `.mp4` variant URL (falling back to the highest-resolution
-/// variant of any kind), resolved to an absolute URL.
+/// Fetch an HLS master playlist and return a directly-playable progressive
+/// `.mp4` URL for the app's native `<video>`.
+///
+/// Apple's motion master playlist lists ONLY segmented HLS variants
+/// (`…_WxH.m3u8`) — there is no progressive `.mp4` entry to pick. But each
+/// variant has a sibling progressive mp4 at the same URL with the trailing
+/// `.m3u8` swapped for `-.mp4` (verified against live assets). WebView2 has
+/// no HLS.js (can't play `.m3u8`) AND no HEVC license (can't play `hvc1` /
+/// H.265), so we pick the highest-resolution **H.264 (`avc1`)** variant and
+/// derive its mp4. Order of preference: highest-res avc1 mp4 → a literal
+/// `.mp4` variant if a playlist ever lists one directly → highest-res mp4 of
+/// any codec as a last resort (some Windows installs do carry an HEVC codec).
 fn resolve_m3u8_to_mp4(m3u8_url: &str) -> Result<String, String> {
     let (status, text) = get_text(m3u8_url, &[])?;
     if !(200..300).contains(&status) {
@@ -352,14 +361,19 @@ fn resolve_m3u8_to_mp4(m3u8_url: &str) -> Result<String, String> {
     }
 
     let lines: Vec<&str> = text.lines().collect();
-    let mut best_mp4: Option<(u64, String)> = None;
-    let mut best_any: Option<(u64, String)> = None;
+    let mut best_avc1: Option<(u64, String)> = None; // derived mp4, H.264 only
+    let mut best_literal: Option<(u64, String)> = None; // a `.mp4` in the playlist
+    let mut best_any: Option<(u64, String)> = None; // derived mp4, any codec
 
     let mut i = 0;
     while i < lines.len() {
         let line = lines[i].trim();
+        // `#EXT-X-STREAM-INF` (playable variants) but NOT
+        // `#EXT-X-I-FRAME-STREAM-INF` (trick-play, inline URI) — the latter
+        // starts with `#EXT-X-I`, so the prefix check already excludes it.
         if line.starts_with("#EXT-X-STREAM-INF") {
             let pixels = parse_resolution(line).unwrap_or(0);
+            let is_avc1 = codecs_contains(line, "avc1");
             // The URI is the next non-empty, non-comment line.
             let mut j = i + 1;
             while j < lines.len() {
@@ -373,11 +387,17 @@ fn resolve_m3u8_to_mp4(m3u8_url: &str) -> Result<String, String> {
             if j < lines.len() {
                 let uri = resolve_url(m3u8_url, lines[j].trim());
                 let path = uri.split('?').next().unwrap_or(&uri);
-                if path.ends_with(".mp4") && better(&best_mp4, pixels) {
-                    best_mp4 = Some((pixels, uri.clone()));
-                }
-                if better(&best_any, pixels) {
-                    best_any = Some((pixels, uri));
+                if path.ends_with(".mp4") {
+                    if better(&best_literal, pixels) {
+                        best_literal = Some((pixels, uri));
+                    }
+                } else if let Some(mp4) = derive_progressive_mp4(&uri) {
+                    if is_avc1 && better(&best_avc1, pixels) {
+                        best_avc1 = Some((pixels, mp4.clone()));
+                    }
+                    if better(&best_any, pixels) {
+                        best_any = Some((pixels, mp4));
+                    }
                 }
                 i = j + 1;
                 continue;
@@ -386,10 +406,30 @@ fn resolve_m3u8_to_mp4(m3u8_url: &str) -> Result<String, String> {
         i += 1;
     }
 
-    best_mp4
+    best_avc1
+        .or(best_literal)
         .or(best_any)
         .map(|(_, uri)| uri)
-        .ok_or_else(|| "no variant in m3u8".into())
+        .ok_or_else(|| "no playable variant in m3u8".into())
+}
+
+/// Derive the progressive mp4 sibling of an HLS variant playlist URL:
+/// `…_1080x1080.m3u8` → `…_1080x1080-.mp4`. Returns `None` for a URL that
+/// isn't a `.m3u8` (nothing to swap).
+fn derive_progressive_mp4(variant_url: &str) -> Option<String> {
+    let path = variant_url.split('?').next().unwrap_or(variant_url);
+    let stem = path.strip_suffix(".m3u8")?;
+    Some(format!("{stem}-.mp4"))
+}
+
+/// True when an `#EXT-X-STREAM-INF` line's `CODECS="…"` attribute contains
+/// `needle` (e.g. `"avc1"`). Missing/malformed attribute → false.
+fn codecs_contains(stream_inf: &str, needle: &str) -> bool {
+    stream_inf
+        .split("CODECS=\"")
+        .nth(1)
+        .and_then(|rest| rest.split('"').next())
+        .is_some_and(|codecs| codecs.contains(needle))
 }
 
 fn better(current: &Option<(u64, String)>, pixels: u64) -> bool {
