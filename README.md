@@ -26,7 +26,7 @@ cargo component build --release
 
 ## Install
 
-Users don't build it — they install it from WaveFlow's in-app plugin store (Settings → Plugins → Store) once it's listed in [InstaZDLL/waveflow-plugins](https://github.com/InstaZDLL/waveflow-plugins). Requires **WaveFlow 1.7.0+** (the `waveflow:metadata@1.1.0` motion-artwork fields).
+Users don't build it — they install it from WaveFlow's in-app plugin store (Settings → Plugins → Store) once it's listed in [InstaZDLL/waveflow-plugins](https://github.com/InstaZDLL/waveflow-plugins). Requires **WaveFlow 1.6.2+** (the `waveflow:metadata@1.1.0` motion-artwork fields).
 
 ## Permissions
 
