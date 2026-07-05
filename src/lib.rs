@@ -27,6 +27,7 @@ mod bindings;
 use bindings::exports::waveflow::metadata::enricher::{
     AlbumDetails, ArtistDetails, Guest, LyricsLine,
 };
+use bindings::waveflow::host::config;
 use bindings::waveflow::host::http::{self, Request};
 use bindings::waveflow::host::log::{self, Level};
 use bindings::waveflow::host::storage;
@@ -123,10 +124,17 @@ fn resolve_album(artist: &str, title: &str) -> Result<Option<Motion>, String> {
         return Ok(None);
     };
 
-    let square = resolve_m3u8_to_mp4(&editorial.square_m3u8)?;
+    // User option (`manifest.toml` → `[[options]]`, set in-app): when on, pick
+    // the highest-resolution rendition of ANY codec (Apple's 4K covers are
+    // H.265/HEVC-only). Default off → H.264 1080, which every WebView plays.
+    let prefer_hevc = config::get_option("prefer_hevc")
+        .map(|v| v == "true")
+        .unwrap_or(false);
+
+    let square = resolve_m3u8_to_mp4(&editorial.square_m3u8, prefer_hevc)?;
     let tall = editorial
         .tall_m3u8
-        .and_then(|u| resolve_m3u8_to_mp4(&u).ok());
+        .and_then(|u| resolve_m3u8_to_mp4(&u, prefer_hevc).ok());
 
     Ok(Some(Motion { square, tall }))
 }
@@ -354,7 +362,7 @@ fn find_jwt(js: &str) -> Option<String> {
 /// derive its mp4. Order of preference: highest-res avc1 mp4 → a literal
 /// `.mp4` variant if a playlist ever lists one directly → highest-res mp4 of
 /// any codec as a last resort (some Windows installs do carry an HEVC codec).
-fn resolve_m3u8_to_mp4(m3u8_url: &str) -> Result<String, String> {
+fn resolve_m3u8_to_mp4(m3u8_url: &str, prefer_hevc: bool) -> Result<String, String> {
     let (status, text) = get_text(m3u8_url, &[])?;
     if !(200..300).contains(&status) {
         return Err(format!("m3u8 status {status}"));
@@ -406,10 +414,15 @@ fn resolve_m3u8_to_mp4(m3u8_url: &str) -> Result<String, String> {
         i += 1;
     }
 
-    best_avc1
-        .or(best_literal)
-        .or(best_any)
-        .map(|(_, uri)| uri)
+    // Default: prefer H.264 (avc1) for universal playback. When the user opts
+    // into HEVC, take the highest-resolution rendition of any codec first
+    // (Apple's 4K/2160 covers are H.265-only).
+    let pick = if prefer_hevc {
+        best_any.or(best_avc1).or(best_literal)
+    } else {
+        best_avc1.or(best_literal).or(best_any)
+    };
+    pick.map(|(_, uri)| uri)
         .ok_or_else(|| "no playable variant in m3u8".into())
 }
 

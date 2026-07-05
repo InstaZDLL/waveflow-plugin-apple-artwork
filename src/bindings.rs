@@ -557,6 +557,71 @@ pub mod waveflow {
                 }
             }
         }
+        #[allow(dead_code, async_fn_in_trait, unused_imports, clippy::all)]
+        pub mod config {
+            #[used]
+            #[doc(hidden)]
+            static __FORCE_SECTION_REF: fn() = super::super::super::__link_custom_section_describing_imports;
+            use super::super::super::_rt;
+            #[allow(unused_unsafe, clippy::all)]
+            /// Read a host-managed, user-set option for this plugin by key. Options are
+            /// declared in `manifest.toml` (`[[options]]`); `none` = unset, fall back to
+            /// the plugin's own default. Read-only from the guest.
+            pub fn get_option(key: &str) -> Option<_rt::String> {
+                unsafe {
+                    #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
+                    #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
+                    struct RetArea(
+                        [::core::mem::MaybeUninit<
+                            u8,
+                        >; 3 * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let mut ret_area = RetArea(
+                        [::core::mem::MaybeUninit::uninit(); 3
+                            * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let vec0 = key;
+                    let ptr0 = vec0.as_ptr().cast::<u8>();
+                    let len0 = vec0.len();
+                    let ptr1 = ret_area.0.as_mut_ptr().cast::<u8>();
+                    #[cfg(target_arch = "wasm32")]
+                    #[link(wasm_import_module = "waveflow:host/config@1.0.0")]
+                    unsafe extern "C" {
+                        #[link_name = "get-option"]
+                        fn wit_import2(_: *mut u8, _: usize, _: *mut u8);
+                    }
+                    #[cfg(not(target_arch = "wasm32"))]
+                    unsafe extern "C" fn wit_import2(_: *mut u8, _: usize, _: *mut u8) {
+                        unreachable!()
+                    }
+                    unsafe { wit_import2(ptr0.cast_mut(), len0, ptr1) };
+                    let l3 = i32::from(*ptr1.add(0).cast::<u8>());
+                    let result7 = match l3 {
+                        0 => None,
+                        1 => {
+                            let e = {
+                                let l4 = *ptr1
+                                    .add(::core::mem::size_of::<*const u8>())
+                                    .cast::<*mut u8>();
+                                let l5 = *ptr1
+                                    .add(2 * ::core::mem::size_of::<*const u8>())
+                                    .cast::<usize>();
+                                let len6 = l5;
+                                let bytes6 = _rt::Vec::from_raw_parts(
+                                    l4.cast(),
+                                    len6,
+                                    len6,
+                                );
+                                _rt::string_lift(bytes6)
+                            };
+                            Some(e)
+                        }
+                        _ => _rt::invalid_enum_discriminant(),
+                    };
+                    result7
+                }
+            }
+        }
     }
 }
 #[rustfmt::skip]
@@ -1367,9 +1432,9 @@ pub(crate) use __export_plugin_impl as export;
 )]
 #[doc(hidden)]
 #[allow(clippy::octal_escapes)]
-pub static __WIT_BINDGEN_COMPONENT_TYPE: [u8; 912] = *b"\
-\0asm\x0d\0\x01\0\0\x19\x16wit-component-encoding\x04\0\x07\x93\x06\x01A\x02\x01\
-A\x08\x01B\x0b\x01o\x02ss\x01p\0\x01p}\x01k\x02\x01r\x04\x06methods\x03urls\x07h\
+pub static __WIT_BINDGEN_COMPONENT_TYPE: [u8; 974] = *b"\
+\0asm\x0d\0\x01\0\0\x19\x16wit-component-encoding\x04\0\x07\xd1\x06\x01A\x02\x01\
+A\x0a\x01B\x0b\x01o\x02ss\x01p\0\x01p}\x01k\x02\x01r\x04\x06methods\x03urls\x07h\
 eaders\x01\x04body\x03\x04\0\x07request\x03\0\x04\x01r\x03\x06status{\x07headers\
 \x01\x04body\x02\x04\0\x08response\x03\0\x06\x01j\x01\x07\x01s\x01@\x01\x03req\x05\
 \0\x08\x04\0\x04send\x01\x09\x03\0\x18waveflow:host/http@1.0.0\x05\0\x01B\x04\x01\
@@ -1378,17 +1443,18 @@ m\x05\x05trace\x05debug\x04info\x04warn\x05error\x04\0\x05level\x03\0\0\x01@\x02
 @1.0.0\x05\x01\x01B\x0b\x01p}\x01j\x01\0\x01s\x01@\x01\x04paths\0\x01\x04\0\x0ar\
 ead-asset\x01\x02\x01k\0\x01j\x01\x03\x01s\x01@\x01\x03keys\0\x04\x04\0\x0aread-\
 state\x01\x05\x01j\0\x01s\x01@\x02\x03keys\x05value\0\0\x06\x04\0\x0bwrite-state\
-\x01\x07\x03\0\x1bwaveflow:host/storage@1.0.0\x05\x02\x01B\x13\x01ks\x01ps\x01r\x03\
-\x03bio\0\x09image-url\0\x07similar\x01\x04\0\x0eartist-details\x03\0\x02\x01ky\x01\
-r\x05\x0bdescription\0\x09cover-url\0\x0btrack-count\x04\x10motion-cover-url\0\x15\
-motion-cover-tall-url\0\x04\0\x0dalbum-details\x03\0\x05\x01r\x02\x07time-ms\x04\
-\x04texts\x04\0\x0blyrics-line\x03\0\x07\x01j\x01\x03\x01s\x01@\x01\x04names\0\x09\
-\x04\0\x0bartist-info\x01\x0a\x01j\x01\x06\x01s\x01@\x02\x06artists\x05titles\0\x0b\
-\x04\0\x0aalbum-info\x01\x0c\x01p\x08\x01j\x01\x0d\x01s\x01@\x02\x06artists\x05t\
-itles\0\x0e\x04\0\x06lyrics\x01\x0f\x04\0\x20waveflow:metadata/enricher@1.1.0\x05\
-\x03\x04\0\x1ewaveflow:metadata/plugin@1.1.0\x04\0\x0b\x0c\x01\0\x06plugin\x03\0\
-\0\0G\x09producers\x01\x0cprocessed-by\x02\x0dwit-component\x070.227.1\x10wit-bi\
-ndgen-rust\x060.41.0";
+\x01\x07\x03\0\x1bwaveflow:host/storage@1.0.0\x05\x02\x01B\x03\x01ks\x01@\x01\x03\
+keys\0\0\x04\0\x0aget-option\x01\x01\x03\0\x1awaveflow:host/config@1.0.0\x05\x03\
+\x01B\x13\x01ks\x01ps\x01r\x03\x03bio\0\x09image-url\0\x07similar\x01\x04\0\x0ea\
+rtist-details\x03\0\x02\x01ky\x01r\x05\x0bdescription\0\x09cover-url\0\x0btrack-\
+count\x04\x10motion-cover-url\0\x15motion-cover-tall-url\0\x04\0\x0dalbum-detail\
+s\x03\0\x05\x01r\x02\x07time-ms\x04\x04texts\x04\0\x0blyrics-line\x03\0\x07\x01j\
+\x01\x03\x01s\x01@\x01\x04names\0\x09\x04\0\x0bartist-info\x01\x0a\x01j\x01\x06\x01\
+s\x01@\x02\x06artists\x05titles\0\x0b\x04\0\x0aalbum-info\x01\x0c\x01p\x08\x01j\x01\
+\x0d\x01s\x01@\x02\x06artists\x05titles\0\x0e\x04\0\x06lyrics\x01\x0f\x04\0\x20w\
+aveflow:metadata/enricher@1.1.0\x05\x04\x04\0\x1ewaveflow:metadata/plugin@1.1.0\x04\
+\0\x0b\x0c\x01\0\x06plugin\x03\0\0\0G\x09producers\x01\x0cprocessed-by\x02\x0dwi\
+t-component\x070.227.1\x10wit-bindgen-rust\x060.41.0";
 #[inline(never)]
 #[doc(hidden)]
 pub fn __link_custom_section_describing_imports() {

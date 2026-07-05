@@ -3,7 +3,7 @@ schema_version = 1
 [plugin]
 id = "apple-artwork"
 name = "Apple Motion Artwork"
-version = "0.1.1"
+version = "0.2.0"
 author = "InstaZDLL"
 world = "waveflow:metadata/v1"
 description = "Animated album covers (motion artwork) from Apple Music, rendered behind the now-playing view."
@@ -26,3 +26,11 @@ storage_read = false
 # Caches resolved motion URLs + a negative sentinel + the anonymous token,
 # so a given album hits Apple at most once and the app stays Apple-friendly.
 storage_state = true
+
+# User-configurable options, surfaced in Settings → Plugins → ⚙️.
+[[options]]
+key = "prefer_hevc"
+type = "bool"
+label = "Prefer 4K HEVC covers"
+default = "false"
+description = "Use Apple's highest-resolution H.265 (HEVC) rendition when available. Only enable if your system can decode HEVC video — otherwise the cover won't load. Off = compatible H.264 1080p."
