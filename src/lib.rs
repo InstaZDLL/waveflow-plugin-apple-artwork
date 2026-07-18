@@ -110,16 +110,46 @@ impl Motion {
     }
 }
 
+/// How many catalogue candidates we're willing to probe for one album.
+///
+/// Each attempt costs a bearer-token fetch plus an amp-api call, and Apple
+/// rate-limits aggressively, so we stop well before exhausting the search
+/// results. Verified matches are probed first, so the cap almost never
+/// bites on a well-tagged library.
+const MAX_CANDIDATES: usize = 3;
+
 /// `Ok(Some)` = motion found, `Ok(None)` = confirmed no motion (cache it),
 /// `Err` = transient failure (don't cache).
 fn resolve_album(artist: &str, title: &str) -> Result<Option<Motion>, String> {
-    let Some((storefront, album_id, album_url)) = itunes_lookup(artist, title)? else {
+    let candidates = itunes_lookup(artist, title)?;
+    if candidates.is_empty() {
         // No Apple catalogue match — treat as a confirmed miss so we don't
         // re-search every track change for an album Apple doesn't carry.
         return Ok(None);
-    };
+    }
 
-    let editorial = fetch_editorial_video(&storefront, &album_id, &album_url)?;
+    // Probe candidates in order (verified name matches first). Apple often
+    // returns a single / EP / clean edition ahead of the album that actually
+    // carries the editorial video, so stopping at the first hit — as this
+    // used to — lost covers that were one result away.
+    let mut editorial = None;
+    for candidate in candidates.iter().take(MAX_CANDIDATES) {
+        // A transient failure (rate limit, network) propagates immediately
+        // rather than burning through the remaining candidates: retrying
+        // them now would just deepen the rate limit, and `Err` tells the
+        // host not to cache the miss.
+        match fetch_editorial_video(
+            &candidate.storefront,
+            &candidate.album_id,
+            &candidate.album_url,
+        )? {
+            Some(found) => {
+                editorial = Some(found);
+                break;
+            }
+            None => continue,
+        }
+    }
     let Some(editorial) = editorial else {
         return Ok(None);
     };
@@ -151,12 +181,28 @@ struct ItunesResp {
 struct ItunesResult {
     #[serde(rename = "collectionViewUrl")]
     collection_view_url: Option<String>,
+    #[serde(rename = "collectionName")]
+    collection_name: Option<String>,
 }
 
-/// Search iTunes for the album and return `(storefront, album_id, album_url)`.
-fn itunes_lookup(artist: &str, title: &str) -> Result<Option<(String, String, String)>, String> {
+/// One catalogue album we can ask amp-api about.
+struct Candidate {
+    storefront: String,
+    album_id: String,
+    album_url: String,
+}
+
+/// Search iTunes for the album and return every usable candidate, the ones
+/// whose title actually matches the request first.
+///
+/// `explicit=Yes` matters: without it Apple can hand back the *clean*
+/// edition, which is a different catalogue id and frequently has no
+/// editorial video even when the explicit edition does.
+fn itunes_lookup(artist: &str, title: &str) -> Result<Vec<Candidate>, String> {
     let term = url_encode(&format!("{artist} {title}"));
-    let url = format!("https://itunes.apple.com/search?term={term}&entity=album&limit=5");
+    let url = format!(
+        "https://itunes.apple.com/search?term={term}&entity=album&limit=5&explicit=Yes"
+    );
     let (status, body) = get_text(&url, &[("Accept", "application/json")])?;
     if status == 429 || status == 403 {
         return Err(format!("itunes rate limited: {status}"));
@@ -166,14 +212,97 @@ fn itunes_lookup(artist: &str, title: &str) -> Result<Option<(String, String, St
     }
     let parsed: ItunesResp =
         serde_json::from_str(&body).map_err(|e| format!("itunes json: {e}"))?;
+
+    // Three tiers, probed in this order. Apple's own ranking is not
+    // reliable here: searching for an album routinely returns the
+    // same-named *single* first, and that single usually has no editorial
+    // video even when the album does.
+    //
+    //   exact    "Short n' Sweet"            == requested
+    //   partial  "Short n' Sweet (Deluxe)"   contains requested — real
+    //            editions, but also "Better - Single" for "Better", which
+    //            is exactly why it ranks below exact
+    //   other    no title agreement at all — last resort, since a wrong
+    //            album beats no cover only marginally
+    let mut exact = Vec::new();
+    let mut partial = Vec::new();
+    let mut other = Vec::new();
     for r in parsed.results {
-        if let Some(url) = r.collection_view_url {
-            if let Some((store, id)) = parse_album_url(&url) {
-                return Ok(Some((store, id, url)));
-            }
+        let Some(url) = r.collection_view_url else {
+            continue;
+        };
+        let Some((storefront, album_id)) = parse_album_url(&url) else {
+            continue;
+        };
+        let candidate = Candidate {
+            storefront,
+            album_id,
+            album_url: url,
+        };
+        match r.collection_name.as_deref().map(|n| rank_album_name(n, title)) {
+            Some(NameMatch::Exact) => exact.push(candidate),
+            Some(NameMatch::Partial) => partial.push(candidate),
+            _ => other.push(candidate),
         }
     }
-    Ok(None)
+    exact.extend(partial);
+    exact.extend(other);
+    Ok(exact)
+}
+
+/// How well a catalogue title agrees with the one we asked for.
+#[derive(PartialEq)]
+enum NameMatch {
+    Exact,
+    Partial,
+    None,
+}
+
+/// Compare a catalogue album title against the requested one.
+///
+/// Both sides are lowercased with punctuation flattened to spaces first, so
+/// apostrophes, dashes and stray double spaces never decide the outcome.
+fn rank_album_name(found: &str, requested: &str) -> NameMatch {
+    let found = normalize_album_name(found);
+    let requested = normalize_album_name(requested);
+    if found.is_empty() || requested.is_empty() {
+        return NameMatch::None;
+    }
+    if found == requested {
+        return NameMatch::Exact;
+    }
+    if found.contains(&requested) {
+        return NameMatch::Partial;
+    }
+    NameMatch::None
+}
+
+/// Lowercase and flatten punctuation, so only the words decide a match.
+///
+/// Apostrophes are **dropped** rather than turned into a separator: they sit
+/// inside words, so replacing them with a space splits "Don't" into "don t"
+/// and a library tagged `Dont Call Me Up` would then never match Apple's
+/// `Don't Call Me Up`. Every other non-alphanumeric run collapses to a
+/// single space, which keeps real word boundaries (dashes, parentheses).
+fn normalize_album_name(input: &str) -> String {
+    let mut out = String::with_capacity(input.len());
+    let mut pending_space = false;
+    for ch in input.chars() {
+        if matches!(ch, '\'' | '\u{2019}' | '\u{02BC}' | '`') {
+            // Intra-word punctuation: skip without breaking the word.
+            continue;
+        }
+        if ch.is_alphanumeric() {
+            if pending_space && !out.is_empty() {
+                out.push(' ');
+            }
+            pending_space = false;
+            out.extend(ch.to_lowercase());
+        } else {
+            pending_space = true;
+        }
+    }
+    out
 }
 
 /// `https://music.apple.com/us/album/better-single/1834571502`
