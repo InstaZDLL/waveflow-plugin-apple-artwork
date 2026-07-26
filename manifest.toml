@@ -10,6 +10,30 @@ description = "Animated album covers (motion artwork) from Apple Music, rendered
 homepage = "https://github.com/InstaZDLL/waveflow-plugin-apple-artwork"
 license = "MIT"
 
+# Translations of `description`, shown by WaveFlow 1.8.0+ in the user's
+# language. Older hosts ignore this table and keep rendering the plain
+# English string above — which is why the translations live HERE rather
+# than replacing `description` with a language map: a host predating the
+# feature type-errors on that form and drops the plugin entirely.
+# "now-playing view" uses each locale's own wording for that screen.
+[plugin.description_i18n]
+fr = "Pochettes d'album animées (motion artwork) depuis Apple Music, affichées derrière la vue En cours de lecture."
+de = "Animierte Albumcover (Motion Artwork) aus Apple Music, hinter der Ansicht „Wird gespielt“ dargestellt."
+es = "Portadas de álbum animadas (motion artwork) de Apple Music, mostradas detrás de la vista Reproduciendo ahora."
+it = "Copertine animate degli album (motion artwork) da Apple Music, mostrate dietro la vista In riproduzione."
+nl = "Geanimeerde albumhoezen (motion artwork) van Apple Music, weergegeven achter de weergave Speelt nu."
+pt = "Capas de álbum animadas (motion artwork) do Apple Music, apresentadas por trás da vista Agora a reproduzir."
+"pt-BR" = "Capas de álbum animadas (motion artwork) do Apple Music, exibidas atrás da tela Tocando agora."
+ru = "Анимированные обложки альбомов (motion artwork) из Apple Music, отображаются позади экрана «Сейчас играет»."
+tr = "Apple Music'ten animasyonlu albüm kapakları (motion artwork), Şimdi çalıyor görünümünün arkasında gösterilir."
+id = "Sampul album animasi (motion artwork) dari Apple Music, ditampilkan di belakang tampilan Sedang diputar."
+ja = "Apple Music のアニメーションアルバムカバー（モーションアートワーク）を「再生中」画面の背景に表示します。"
+ko = "Apple Music의 애니메이션 앨범 커버(모션 아트워크)를 '지금 재생 중' 화면 뒤에 표시합니다."
+"zh-CN" = "来自 Apple Music 的动态专辑封面（motion artwork），显示在“正在播放”视图后方。"
+"zh-TW" = "來自 Apple Music 的動態專輯封面（motion artwork），顯示於「現在播放」畫面後方。"
+ar = "أغلفة ألبومات متحركة (motion artwork) من Apple Music، تُعرض خلف واجهة «قيد التشغيل»."
+hi = "Apple Music से एनिमेटेड एल्बम कवर (motion artwork), \"अब चल रहा है\" व्यू के पीछे दिखाए जाते हैं।"
+
 [permissions]
 # The plugin fetches: the iTunes search API (album lookup), the Apple Music
 # web page + its JS bundles (anonymous token), the AMP catalogue API
@@ -34,3 +58,41 @@ type = "bool"
 label = "Prefer 4K HEVC covers"
 default = "false"
 description = "Use Apple's highest-resolution H.265 (HEVC) rendition when available. Only enable if your system can decode HEVC video — otherwise the cover won't load. Off = compatible H.264 1080p."
+
+# Same sibling-table rule as [plugin.description_i18n] above. Codec names
+# (HEVC, H.265, H.264, 4K, 1080p) stay verbatim in every language.
+[options.label_i18n]
+fr = "Préférer les pochettes 4K HEVC"
+de = "4K-HEVC-Cover bevorzugen"
+es = "Preferir portadas 4K HEVC"
+it = "Preferisci le copertine 4K HEVC"
+nl = "Voorkeur voor 4K HEVC-hoezen"
+pt = "Preferir capas 4K HEVC"
+"pt-BR" = "Preferir capas 4K HEVC"
+ru = "Предпочитать обложки 4K HEVC"
+tr = "4K HEVC kapakları tercih et"
+id = "Utamakan sampul 4K HEVC"
+ja = "4K HEVC のカバーを優先"
+ko = "4K HEVC 커버 우선"
+"zh-CN" = "优先使用 4K HEVC 封面"
+"zh-TW" = "優先使用 4K HEVC 封面"
+ar = "تفضيل أغلفة 4K HEVC"
+hi = "4K HEVC कवर को प्राथमिकता दें"
+
+[options.description_i18n]
+fr = "Utilise la version H.265 (HEVC) la plus haute résolution d'Apple lorsqu'elle est disponible. À n'activer que si votre système sait décoder la vidéo HEVC — sinon la pochette ne se chargera pas. Désactivé = H.264 1080p compatible."
+de = "Verwendet Apples H.265-Fassung (HEVC) in höchster Auflösung, sofern verfügbar. Nur aktivieren, wenn Ihr System HEVC-Video dekodieren kann — sonst lädt das Cover nicht. Aus = kompatibles H.264 1080p."
+es = "Usa la versión H.265 (HEVC) de máxima resolución de Apple cuando esté disponible. Actívalo solo si tu sistema puede decodificar vídeo HEVC; de lo contrario, la portada no se cargará. Desactivado = H.264 1080p compatible."
+it = "Usa la versione H.265 (HEVC) alla risoluzione più alta di Apple quando disponibile. Attivalo solo se il tuo sistema è in grado di decodificare video HEVC, altrimenti la copertina non verrà caricata. Disattivato = H.264 1080p compatibile."
+nl = "Gebruikt Apples H.265-versie (HEVC) met de hoogste resolutie wanneer beschikbaar. Schakel dit alleen in als je systeem HEVC-video kan decoderen — anders laadt de hoes niet. Uit = compatibel H.264 1080p."
+pt = "Utiliza a versão H.265 (HEVC) de resolução mais alta da Apple quando disponível. Ative apenas se o seu sistema conseguir descodificar vídeo HEVC — caso contrário, a capa não carrega. Desativado = H.264 1080p compatível."
+"pt-BR" = "Usa a versão H.265 (HEVC) de maior resolução da Apple quando disponível. Ative apenas se o seu sistema conseguir decodificar vídeo HEVC — caso contrário, a capa não carrega. Desativado = H.264 1080p compatível."
+ru = "Использует версию H.265 (HEVC) с наивысшим разрешением от Apple, когда она доступна. Включайте, только если ваша система умеет декодировать видео HEVC — иначе обложка не загрузится. Выключено = совместимый H.264 1080p."
+tr = "Mevcut olduğunda Apple'ın en yüksek çözünürlüklü H.265 (HEVC) sürümünü kullanır. Yalnızca sisteminiz HEVC video kodunu çözebiliyorsa etkinleştirin — aksi hâlde kapak yüklenmez. Kapalı = uyumlu H.264 1080p."
+id = "Menggunakan versi H.265 (HEVC) beresolusi tertinggi dari Apple bila tersedia. Aktifkan hanya jika sistem Anda dapat mendekode video HEVC — jika tidak, sampul tidak akan dimuat. Nonaktif = H.264 1080p yang kompatibel."
+ja = "利用できる場合は Apple の最高解像度の H.265（HEVC）を使用します。HEVC 動画をデコードできるシステムでのみ有効にしてください。そうでない場合、カバーは読み込まれません。オフ = 互換性のある H.264 1080p。"
+ko = "사용할 수 있을 때 Apple의 최고 해상도 H.265(HEVC) 버전을 사용합니다. 시스템이 HEVC 비디오를 디코딩할 수 있을 때만 켜세요 — 그렇지 않으면 커버가 로드되지 않습니다. 끄면 호환되는 H.264 1080p를 사용합니다."
+"zh-CN" = "在可用时使用 Apple 分辨率最高的 H.265（HEVC）版本。仅在系统可以解码 HEVC 视频时开启，否则封面将无法加载。关闭 = 兼容的 H.264 1080p。"
+"zh-TW" = "在可用時使用 Apple 解析度最高的 H.265（HEVC）版本。僅在系統可以解碼 HEVC 影片時開啟，否則封面將無法載入。關閉 = 相容的 H.264 1080p。"
+ar = "يستخدم إصدار H.265 (HEVC) بأعلى دقة من Apple عند توفره. فعّله فقط إذا كان نظامك قادرًا على فك ترميز فيديو HEVC، وإلا فلن يتم تحميل الغلاف. إيقاف = H.264 1080p متوافق."
+hi = "उपलब्ध होने पर Apple का सबसे उच्च-रिज़ॉल्यूशन H.265 (HEVC) संस्करण उपयोग करता है। इसे तभी चालू करें जब आपका सिस्टम HEVC वीडियो डिकोड कर सके — अन्यथा कवर लोड नहीं होगा। बंद = संगत H.264 1080p।"
