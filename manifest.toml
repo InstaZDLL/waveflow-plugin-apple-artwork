@@ -10,9 +10,13 @@ description = "Shows animated Apple Music album artwork while your music is play
 homepage = "https://github.com/InstaZDLL/waveflow-plugin-apple-artwork"
 license = "MIT"
 
-# Propagated to the other locales, like every user-facing string in the
-# app. Japanese, Korean and both Chinese were reviewed by native
-# speakers.
+# Translations of `description`, shown by WaveFlow 1.8.0+ in the user's
+# language. Older hosts ignore this table and keep rendering the plain
+# English string above — which is why the translations live HERE rather
+# than replacing `description` with a language map: a host predating the
+# feature type-errors on that form and drops the plugin entirely.
+# Every locale was reviewed by a native speaker, and each one uses its
+# own wording for the now-playing screen.
 [plugin.description_i18n]
 fr = "Affiche les pochettes animées d'Apple Music pendant la lecture."
 es = "Muestra portadas animadas de Apple Music mientras suena tu música."
@@ -56,6 +60,8 @@ label = "Prefer 4K HEVC covers"
 default = "false"
 description = "Use Apple's highest-resolution H.265 (HEVC) rendition when available. Only enable if your system can decode HEVC video — otherwise the cover won't load. Off = compatible H.264 1080p."
 
+# Same sibling-table rule as [plugin.description_i18n] above. Codec names
+# (HEVC, H.265, H.264, 4K, 1080p) stay verbatim in every language.
 [options.label_i18n]
 fr = "Préférer les pochettes 4K HEVC"
 es = "Preferir portadas 4K HEVC"
