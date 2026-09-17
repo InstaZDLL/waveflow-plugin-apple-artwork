@@ -6,9 +6,26 @@ name = "Apple Motion Artwork"
 version = "0.3.0"
 author = "InstaZDLL"
 world = "waveflow:metadata/v1"
-description = "Animated album covers (motion artwork) from Apple Music, rendered behind the now-playing view."
+description = "Shows animated Apple Music album artwork while your music is playing."
 homepage = "https://github.com/InstaZDLL/waveflow-plugin-apple-artwork"
 license = "MIT"
+
+# Propagated to the other locales, like every user-facing string in the
+# app. Japanese, Korean and both Chinese are pending a native-speaker
+# pass and fall back to English until then.
+[plugin.description_i18n]
+fr = "Affiche les pochettes animées d'Apple Music pendant la lecture."
+es = "Muestra portadas animadas de Apple Music mientras suena tu música."
+de = "Zeigt animierte Album-Cover von Apple Music, während deine Musik läuft."
+it = "Mostra le copertine animate di Apple Music durante l'ascolto."
+nl = "Toont geanimeerde albumhoezen van Apple Music terwijl je muziek speelt."
+pt = "Mostra capas de álbum animadas do Apple Music enquanto a música toca."
+"pt-BR" = "Mostra capas de álbum animadas do Apple Music enquanto a música toca."
+ru = "Показывает анимированные обложки Apple Music во время воспроизведения."
+tr = "Müziğiniz çalarken Apple Music'in hareketli albüm kapaklarını gösterir."
+id = "Menampilkan sampul album animasi dari Apple Music saat musik diputar."
+ar = "يعرض أغلفة ألبومات متحركة من Apple Music أثناء تشغيل الموسيقى."
+hi = "संगीत चलने के दौरान Apple Music के एनिमेटेड एल्बम आर्टवर्क दिखाता है।"
 
 [permissions]
 # The plugin fetches: the iTunes search API (album lookup), the Apple Music
@@ -34,3 +51,31 @@ type = "bool"
 label = "Prefer 4K HEVC covers"
 default = "false"
 description = "Use Apple's highest-resolution H.265 (HEVC) rendition when available. Only enable if your system can decode HEVC video — otherwise the cover won't load. Off = compatible H.264 1080p."
+
+[options.label_i18n]
+fr = "Préférer les pochettes 4K HEVC"
+es = "Preferir portadas 4K HEVC"
+de = "4K-HEVC-Cover bevorzugen"
+it = "Preferisci le copertine 4K HEVC"
+nl = "4K HEVC-hoezen verkiezen"
+pt = "Preferir capas 4K HEVC"
+"pt-BR" = "Preferir capas 4K HEVC"
+ru = "Предпочитать обложки 4K HEVC"
+tr = "4K HEVC kapakları tercih et"
+id = "Utamakan sampul 4K HEVC"
+ar = "تفضيل أغلفة 4K HEVC"
+hi = "4K HEVC कवर को प्राथमिकता दें"
+
+[options.description_i18n]
+fr = "Utilise la version H.265 (HEVC) la plus haute résolution d'Apple quand elle existe. À n'activer que si votre système sait décoder le HEVC, sinon la pochette ne se charge pas. Désactivé : H.264 1080p, compatible partout."
+es = "Usa la versión H.265 (HEVC) de mayor resolución de Apple cuando esté disponible. Actívalo solo si tu sistema puede decodificar HEVC; si no, la portada no se cargará. Desactivado: H.264 1080p, compatible con todo."
+de = "Nutzt Apples H.265-Fassung (HEVC) in der höchsten Auflösung, wenn vorhanden. Aktiviere das nur, wenn dein System HEVC dekodieren kann, sonst lädt das Cover nicht. Aus: H.264 1080p, überall kompatibel."
+it = "Usa la versione H.265 (HEVC) alla massima risoluzione di Apple, quando disponibile. Attivala solo se il tuo sistema sa decodificare l'HEVC, altrimenti la copertina non si carica. Disattivata: H.264 1080p, compatibile con tutto."
+nl = "Gebruikt Apples H.265-versie (HEVC) met de hoogste resolutie als die er is. Zet dit alleen aan als je systeem HEVC kan decoderen, anders laadt de hoes niet. Uit: H.264 1080p, overal compatibel."
+pt = "Usa a versão H.265 (HEVC) de maior resolução da Apple, quando existe. Ativa apenas se o teu sistema souber descodificar HEVC; caso contrário, a capa não carrega. Desativado: H.264 1080p, compatível com tudo."
+"pt-BR" = "Usa a versão H.265 (HEVC) de maior resolução da Apple, quando existe. Ative só se o seu sistema souber decodificar HEVC; caso contrário, a capa não carrega. Desativado: H.264 1080p, compatível com tudo."
+ru = "Использует версию H.265 (HEVC) от Apple в наивысшем разрешении, если она есть. Включайте только если система умеет декодировать HEVC, иначе обложка не загрузится. Выключено: H.264 1080p, совместимо со всем."
+tr = "Varsa Apple'ın en yüksek çözünürlüklü H.265 (HEVC) sürümünü kullanır. Yalnızca sisteminiz HEVC çözebiliyorsa açın; aksi hâlde kapak yüklenmez. Kapalı: her yerde çalışan H.264 1080p."
+id = "Memakai versi H.265 (HEVC) resolusi tertinggi dari Apple bila tersedia. Aktifkan hanya jika perangkatmu bisa mendekode HEVC; kalau tidak, sampulnya tidak akan dimuat. Nonaktif: H.264 1080p yang lebih kompatibel."
+ar = "يستخدم نسخة H.265 (HEVC) بأعلى دقة من Apple عند توفرها. لا تفعّله إلا إذا كان نظامك يستطيع فك ترميز HEVC، وإلا فلن يُحمَّل الغلاف. عند الإيقاف: H.264 بدقة 1080p، وهو متوافق مع كل الأجهزة."
+hi = "उपलब्ध होने पर Apple का सबसे उच्च रिज़ॉल्यूशन वाला H.265 (HEVC) संस्करण उपयोग करता है। इसे तभी चालू करें जब आपका सिस्टम HEVC डिकोड कर सके, वरना कवर लोड नहीं होगा। बंद होने पर H.264 1080p उपयोग होता है, जो हर जगह चलता है।"
