@@ -11,8 +11,8 @@ homepage = "https://github.com/InstaZDLL/waveflow-plugin-apple-artwork"
 license = "MIT"
 
 # Propagated to the other locales, like every user-facing string in the
-# app. Japanese, Korean and both Chinese are pending a native-speaker
-# pass and fall back to English until then.
+# app. Japanese, Korean and Traditional Chinese are pending a
+# native-speaker pass and fall back to English until then.
 [plugin.description_i18n]
 fr = "Affiche les pochettes animées d'Apple Music pendant la lecture."
 es = "Muestra portadas animadas de Apple Music mientras suena tu música."
@@ -24,6 +24,7 @@ pt = "Mostra capas de álbum animadas do Apple Music enquanto a música toca."
 ru = "Показывает анимированные обложки Apple Music во время воспроизведения."
 tr = "Müziğiniz çalarken Apple Music'in hareketli albüm kapaklarını gösterir."
 id = "Menampilkan sampul album animasi dari Apple Music saat musik diputar."
+"zh-CN" = "在播放音乐时显示 Apple Music 的动态专辑封面。"
 ar = "يعرض أغلفة ألبومات متحركة من Apple Music أثناء تشغيل الموسيقى."
 hi = "संगीत चलने के दौरान Apple Music के एनिमेटेड एल्बम आर्टवर्क दिखाता है।"
 
@@ -63,6 +64,7 @@ pt = "Preferir capas 4K HEVC"
 ru = "Предпочитать обложки 4K HEVC"
 tr = "4K HEVC kapakları tercih et"
 id = "Utamakan sampul 4K HEVC"
+"zh-CN" = "优先使用 4K HEVC 封面"
 ar = "تفضيل أغلفة 4K HEVC"
 hi = "4K HEVC कवर को प्राथमिकता दें"
 
@@ -77,5 +79,6 @@ pt = "Usa a versão H.265 (HEVC) de maior resolução da Apple, quando existe. A
 ru = "Использует версию H.265 (HEVC) от Apple в наивысшем разрешении, если она есть. Включайте только если система умеет декодировать HEVC, иначе обложка не загрузится. Выключено: H.264 1080p, совместимо со всем."
 tr = "Varsa Apple'ın en yüksek çözünürlüklü H.265 (HEVC) sürümünü kullanır. Yalnızca sisteminiz HEVC çözebiliyorsa açın; aksi hâlde kapak yüklenmez. Kapalı: her yerde çalışan H.264 1080p."
 id = "Memakai versi H.265 (HEVC) resolusi tertinggi dari Apple bila tersedia. Aktifkan hanya jika perangkatmu bisa mendekode HEVC; kalau tidak, sampulnya tidak akan dimuat. Nonaktif: H.264 1080p yang lebih kompatibel."
+"zh-CN" = "在可用时使用 Apple 分辨率最高的 H.265 (HEVC) 规格。仅当你的系统支持 HEVC 视频解码时才启用，否则封面将无法加载。关闭 = 使用兼容的 H.264 1080p。"
 ar = "يستخدم نسخة H.265 (HEVC) بأعلى دقة من Apple عند توفرها. لا تفعّله إلا إذا كان نظامك يستطيع فك ترميز HEVC، وإلا فلن يُحمَّل الغلاف. عند الإيقاف: H.264 بدقة 1080p، وهو متوافق مع كل الأجهزة."
 hi = "उपलब्ध होने पर Apple का सबसे उच्च रिज़ॉल्यूशन वाला H.265 (HEVC) संस्करण उपयोग करता है। इसे तभी चालू करें जब आपका सिस्टम HEVC डिकोड कर सके, वरना कवर लोड नहीं होगा। बंद होने पर H.264 1080p उपयोग होता है, जो हर जगह चलता है।"
