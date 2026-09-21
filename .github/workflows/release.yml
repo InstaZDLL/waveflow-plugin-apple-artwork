@@ -39,13 +39,43 @@ jobs:
         id: assemble
         run: |
           set -euo pipefail
+          shopt -s nullglob
           VERSION="${GITHUB_REF_NAME#v}"
-          WASM=$(find target -name '*.wasm' -path '*release*' | head -n1)
-          test -n "$WASM" || { echo "::error::no release .wasm found"; exit 1; }
+
+          # Take the component cargo-component writes at the TOP of
+          # target/<triple>/release/, not whatever `find` reaches first.
+          # rustc's intermediate core modules live in the same tree
+          # (deps/, build/*/out/), carry the same extension, and cannot
+          # be loaded by the host. The previous line —
+          #   find target -name '*.wasm' -path '*release*' | head -n1
+          # — matched all of them and picked by directory order. That
+          # happened to land on the component until a rustc bump
+          # (1.97.1 -> 1.98.1) reshuffled the filenames in deps/, and
+          # apple-artwork v0.3.1 + release-radar v0.1.1 shipped a core
+          # module. Both installed cleanly and then did nothing.
+          CANDIDATES=(target/wasm32-*/release/*.wasm)
+          if [ "${#CANDIDATES[@]}" -ne 1 ]; then
+            echo "::error::expected exactly one component in target/wasm32-*/release/, found ${#CANDIDATES[@]}: ${CANDIDATES[*]:-none}"
+            exit 1
+          fi
+          WASM="${CANDIDATES[0]}"
 
           mkdir -p dist
           cp manifest.toml dist/
           cp "$WASM" dist/plugin.wasm
+
+          # Independent of where that file came from: a component's
+          # preamble is 00 61 73 6d 0d 00 01 00 (version 0x000d, layer
+          # 1); a core module's is 00 61 73 6d 01 00 00 00. Stopping
+          # here costs one CI run. Not stopping costs a release — the
+          # blake3 below pins whatever bytes reach it, the registry
+          # trusts that pin, and every install then verifies its way to
+          # the wrong binary.
+          PREAMBLE=$(od -An -v -tx1 -N8 dist/plugin.wasm | tr -d ' \n')
+          if [ "$PREAMBLE" != "0061736d0d000100" ]; then
+            echo "::error::dist/plugin.wasm is not a WebAssembly component (preamble $PREAMBLE, expected 0061736d0d000100)"
+            exit 1
+          fi
 
           BLAKE3=$(b3sum --no-names dist/plugin.wasm)
           echo "$BLAKE3" > dist/plugin.wasm.blake3
