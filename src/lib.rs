@@ -404,7 +404,7 @@ fn get_token(album_url: &str, force: bool) -> Result<String, String> {
 
     for path in find_js_bundles(&html) {
         let js_url = format!("https://music.apple.com{path}");
-        let Ok((s, js)) = get_text(&js_url, &[]) else {
+        let Ok((s, js)) = get_bytes(&js_url, &[]) else {
             continue;
         };
         if !(200..300).contains(&s) {
@@ -438,10 +438,14 @@ fn find_js_bundles(html: &str) -> Vec<String> {
         }
         rest = &rest[end.min(rest.len())..];
         // Advance at least one char to avoid re-matching the same position.
-        if let Some(next) = rest.strip_prefix("/assets/") {
-            let _ = next;
-        } else if !rest.is_empty() {
-            rest = &rest[1.min(rest.len())..];
+        // A whole char: the terminator can be a non-ASCII space (U+00A0 and
+        // friends are `char::is_whitespace`), and slicing at byte 1 of one
+        // would panic — which in wasm is a trap, killing the call.
+        if !rest.starts_with("/assets/") {
+            match rest.chars().next() {
+                Some(c) => rest = &rest[c.len_utf8()..],
+                None => break,
+            }
         }
     }
     out
@@ -449,10 +453,15 @@ fn find_js_bundles(html: &str) -> Vec<String> {
 
 /// Find the first JWT-shaped token (`eyJ…` header, three base64url segments)
 /// in a JS bundle.
-fn find_jwt(js: &str) -> Option<String> {
-    let bytes = js.as_bytes();
+///
+/// Byte-level, and the `eyJ` search goes through `memchr`, which reads a
+/// machine word at a time: `str::find` scans byte by byte, and over the
+/// several megabytes Apple serves that alone spends more wasm instructions
+/// than a plugin call is allowed (WaveFlow#733). A JWT is ASCII, so the
+/// match is lifted back to a `String` at the end and only then.
+fn find_jwt(bytes: &[u8]) -> Option<String> {
     let mut i = 0;
-    while let Some(rel) = js[i..].find("eyJ") {
+    while let Some(rel) = memchr::memmem::find(&bytes[i..], b"eyJ") {
         let start = i + rel;
         let mut end = start;
         let mut dots = 0;
@@ -467,10 +476,11 @@ fn find_jwt(js: &str) -> Option<String> {
                 break;
             }
         }
-        let token = &js[start..end];
+        let token = &bytes[start..end];
         // A JWT is header.payload.signature — three segments, plausibly long.
         if dots == 2 && token.len() > 80 {
-            return Some(token.to_string());
+            // Every byte accepted above is ASCII, so this cannot fail.
+            return String::from_utf8(token.to_vec()).ok();
         }
         i = end.max(start + 1);
     }
@@ -593,6 +603,17 @@ fn parse_resolution(line: &str) -> Option<u64> {
 
 /// GET `url` (following manual redirects), returning `(status, body_text)`.
 fn get_text(url: &str, extra_headers: &[(&str, &str)]) -> Result<(u16, String), String> {
+    let (status, body) = get_bytes(url, extra_headers)?;
+    Ok((status, String::from_utf8_lossy(&body).into_owned()))
+}
+
+/// The same, as the bytes the host returned.
+///
+/// The JavaScript bundles are megabytes, and turning one into a `String`
+/// walks it to validate UTF-8 and then copies the whole thing — before the
+/// search has even started. The token is ASCII, so the scan reads the bytes
+/// (WaveFlow#733).
+fn get_bytes(url: &str, extra_headers: &[(&str, &str)]) -> Result<(u16, Vec<u8>), String> {
     let mut current = url.to_string();
     for _ in 0..MAX_REDIRECTS {
         let mut headers: Vec<(String, String)> = vec![
@@ -616,8 +637,7 @@ fn get_text(url: &str, extra_headers: &[(&str, &str)]) -> Result<(u16, String), 
                 continue;
             }
         }
-        let text = String::from_utf8_lossy(&resp.body).into_owned();
-        return Ok((resp.status, text));
+        return Ok((resp.status, resp.body));
     }
     Err("too many redirects".into())
 }
@@ -742,3 +762,39 @@ fn empty_album() -> AlbumDetails {
         motion_cover_tall_url: None,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The token is found in bytes, without the file ever becoming a
+    /// `String` — that conversion and its copy are most of what made the
+    /// old scan cost 88 % of a call's fuel on Apple's 3.3 MB bundle.
+    #[test]
+    fn a_jwt_is_found_in_raw_bytes() {
+        let token = format!("eyJ{}.{}.{}", "a".repeat(40), "b".repeat(40), "c".repeat(40));
+        let mut js = b"var x=1;// ".to_vec();
+        js.extend_from_slice(token.as_bytes());
+        js.extend_from_slice(b";more");
+        assert_eq!(find_jwt(&js).as_deref(), Some(token.as_str()));
+    }
+
+    /// Too short, and only one dot: neither is a JWT.
+    #[test]
+    fn a_lookalike_is_not_a_token() {
+        assert_eq!(find_jwt(b"eyJshort.abc"), None);
+        let long = format!("eyJ{}", "a".repeat(200));
+        assert_eq!(find_jwt(long.as_bytes()), None);
+    }
+
+    /// A non-ASCII space after a path used to be sliced at byte 1, in the
+    /// middle of its two bytes — a panic, and in wasm that is a trap that
+    /// kills the whole call.
+    #[test]
+    fn a_non_ascii_space_after_a_path_does_not_panic() {
+        let html = "<script src=\"/assets/index~ab.js\"></script>\u{a0}/assets/x\u{2028}end";
+        let found = find_js_bundles(html);
+        assert_eq!(found, vec!["/assets/index~ab.js".to_string()]);
+    }
+}
+

@@ -5,7 +5,7 @@
 
 [package]
 name = "waveflow-plugin-apple-artwork"
-version = "0.3.2"
+version = "0.3.3"
 edition = "2021"
 license = "MIT"
 description = "WaveFlow plugin — animated album covers (motion artwork) from Apple Music"
@@ -25,6 +25,10 @@ wit-bindgen-rt = { version = "0.44", features = ["bitflags"] }
 # all HTTP is routed through the host's `waveflow:host/http` import.
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+# Word-at-a-time substring search. The token hides in megabytes of Apple's
+# JavaScript, and `str::find` there costs enough wasm instructions to burn
+# a plugin call's whole fuel budget (WaveFlow#733).
+memchr = "2"
 
 [package.metadata.component]
 package = "waveflow:apple-artwork"
