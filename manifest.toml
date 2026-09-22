@@ -3,7 +3,7 @@ schema_version = 1
 [plugin]
 id = "apple-artwork"
 name = "Apple Motion Artwork"
-version = "0.3.2"
+version = "0.3.3"
 author = "InstaZDLL"
 world = "waveflow:metadata/v1"
 description = "Shows animated Apple Music album artwork while your music is playing."
