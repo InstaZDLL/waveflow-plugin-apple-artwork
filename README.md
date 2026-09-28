@@ -8,12 +8,12 @@ It's a sandboxed WebAssembly component implementing the `waveflow:metadata/v1` w
 
 `album-info(artist, title)` resolves an animated cover by mirroring the public Apple Music web player (clean-room — no vendored code):
 
-1. **iTunes Search** (`itunes.apple.com/search`) → the album's Apple Music URL (storefront + numeric id).
+1. **iTunes Search** (`itunes.apple.com/search`) → the album's Apple Music URL (storefront + numeric id). When the keyword search does not surface the album (it ranks live albums and singles first for many classics), the artist's whole discography is listed (`itunes.apple.com/lookup`) and searched instead. Only an album by the same artist whose title agrees is ever used: an album Apple has no motion cover for stays static rather than borrowing another album's.
 2. **Anonymous token** — scrapes the bearer JWT the web player embeds in its JS bundles. Cached in the plugin's scratch store; re-scraped on a 401/403.
 3. **AMP catalogue API** (`amp-api.music.apple.com/.../albums/{id}?extend=editorialVideo`) → `editorialVideo.motionDetailSquare/Tall.video` (HLS `.m3u8`).
 4. **m3u8 → mp4** — picks the highest-resolution progressive `.mp4` variant so WaveFlow's native `<video>` can play it (the desktop webview has no HLS.js).
 
-All HTTP goes through the host's permissioned `waveflow:host/http`. Results — a positive hit, a negative sentinel, and the token — are cached in the per-plugin scratch store, so **a given album hits Apple at most once**. That caching is the rate-limit discipline; the host also serialises calls to the plugin.
+All HTTP goes through the host's permissioned `waveflow:host/http`. Results — a positive hit, a negative sentinel, and the token — are cached in the per-plugin scratch store, so **a given album is resolved at most once**: a handful of requests the first time (one search, two more when the album has to be found in the artist's discography, then the catalogue), none after. A transient failure (rate limit, network) is not cached, so the next play retries it. That caching is the rate-limit discipline; the host also serialises calls to the plugin.
 
 ## Build
 

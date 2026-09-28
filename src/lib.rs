@@ -5,7 +5,9 @@
 //! Apple Music web player (clean-room, no vendored code):
 //!
 //! 1. **iTunes Search** (`itunes.apple.com/search`) → the album's Apple
-//!    Music URL, from which we read the storefront + numeric id.
+//!    Music URL, from which we read the storefront + numeric id; when the
+//!    search misses the album, the artist's discography
+//!    (`itunes.apple.com/lookup`) is searched instead.
 //! 2. **Anonymous token** — GET the album page, find its JS bundles, scrape
 //!    the bearer JWT the web player embeds. Cached; re-scraped on a 401/403.
 //! 3. **AMP catalogue API** (`amp-api.music.apple.com/.../albums/{id}
@@ -16,8 +18,10 @@
 //!
 //! Every outbound request goes through `waveflow:host/http` (allowlisted to
 //! the Apple hosts). Results are cached in the per-plugin scratch store — a
-//! positive hit, a negative sentinel, and the token — so a given album hits
-//! Apple at most once. That caching IS the rate-limit discipline: the host
+//! positive hit, a negative sentinel, and the token — so a given album is
+//! resolved at most once: a handful of requests the first time, none after.
+//! A transient failure is not cached and is retried on the next play. That
+//! caching IS the rate-limit discipline: the host
 //! also serialises calls to this plugin, so there is no request storm to
 //! throttle.
 
@@ -179,10 +183,16 @@ struct ItunesResp {
 
 #[derive(Deserialize)]
 struct ItunesResult {
+    #[serde(rename = "wrapperType")]
+    wrapper_type: Option<String>,
     #[serde(rename = "collectionViewUrl")]
     collection_view_url: Option<String>,
     #[serde(rename = "collectionName")]
     collection_name: Option<String>,
+    #[serde(rename = "artistName")]
+    artist_name: Option<String>,
+    #[serde(rename = "artistId")]
+    artist_id: Option<u64>,
 }
 
 /// One catalogue album we can ask amp-api about.
@@ -190,20 +200,90 @@ struct Candidate {
     storefront: String,
     album_id: String,
     album_url: String,
+    /// How its title agreed with the one asked for.
+    rank: NameMatch,
 }
 
-/// Search iTunes for the album and return every usable candidate, the ones
-/// whose title actually matches the request first.
+/// Find the catalogue editions of the requested album, best match first.
 ///
-/// `explicit=Yes` matters: without it Apple can hand back the *clean*
-/// edition, which is a different catalogue id and frequently has no
-/// editorial video even when the explicit edition does.
+/// Only albums **by the requested artist whose title agrees** are returned.
+/// Anything else used to be probed as a last resort, and that is how a
+/// library album with no motion cover of its own showed another one:
+/// *Facelift* took the cover of *Jar of Flies*, the next result for the
+/// same artist. An album Apple has no motion cover for now stays static.
+///
+/// The keyword search comes first, since it costs one request. It is not
+/// enough on its own: for a term like "Pearl Jam Ten" or "Nirvana
+/// Nevermind" it ranks live albums, singles and other artists' songs above
+/// the album itself, often pushing it out of the results altogether. When
+/// it finds neither the album nor an edition of it, the artist's whole
+/// discography is listed (`lookup?id=…&entity=album`) and searched instead;
+/// what the search did find is only used if that finds nothing.
 fn itunes_lookup(artist: &str, title: &str) -> Result<Vec<Candidate>, String> {
     let term = url_encode(&format!("{artist} {title}"));
-    let url = format!(
-        "https://itunes.apple.com/search?term={term}&entity=album&limit=5&explicit=Yes"
-    );
-    let (status, body) = get_text(&url, &[("Accept", "application/json")])?;
+    // `explicit=Yes` matters: without it Apple can hand back the *clean*
+    // edition, which is a different catalogue id and frequently has no
+    // editorial video even when the explicit edition does.
+    let search = itunes_get(&format!(
+        "https://itunes.apple.com/search?term={term}&entity=album&limit=10&explicit=Yes"
+    ))?;
+    let from_search = rank_candidates(&search, artist, title);
+    // Only the album itself, or an edition of it, settles the search. A
+    // title that merely starts the same (`Ten Redux`) may be all the search
+    // shows while the discography holds `Ten`: it is kept for last.
+    if from_search
+        .first()
+        .is_some_and(|c| c.rank < NameMatch::Partial)
+    {
+        return Ok(from_search);
+    }
+
+    // The search usually names the artist even when it misses the album,
+    // which saves the artist lookup.
+    let artist_id = match search
+        .iter()
+        .filter(|r| {
+            r.artist_name
+                .as_deref()
+                .is_some_and(|a| is_artist(a, artist))
+        })
+        .find_map(|r| r.artist_id)
+    {
+        Some(id) => id,
+        None => match find_artist_id(artist)? {
+            Some(id) => id,
+            None => return Ok(from_search),
+        },
+    };
+    let discography = itunes_get(&format!(
+        "https://itunes.apple.com/lookup?id={artist_id}&entity=album&limit=200"
+    ))?;
+    let from_discography = rank_candidates(&discography, artist, title);
+    Ok(if from_discography.is_empty() {
+        from_search
+    } else {
+        from_discography
+    })
+}
+
+/// The iTunes id of the artist named `artist`, if the catalogue has one.
+fn find_artist_id(artist: &str) -> Result<Option<u64>, String> {
+    let term = url_encode(artist);
+    let found = itunes_get(&format!(
+        "https://itunes.apple.com/search?term={term}&entity=musicArtist&limit=5"
+    ))?;
+    Ok(found
+        .iter()
+        .filter(|r| {
+            r.artist_name
+                .as_deref()
+                .is_some_and(|a| is_artist(a, artist))
+        })
+        .find_map(|r| r.artist_id))
+}
+
+fn itunes_get(url: &str) -> Result<Vec<ItunesResult>, String> {
+    let (status, body) = get_text(url, &[("Accept", "application/json")])?;
     if status == 429 || status == 403 {
         return Err(format!("itunes rate limited: {status}"));
     }
@@ -212,48 +292,77 @@ fn itunes_lookup(artist: &str, title: &str) -> Result<Vec<Candidate>, String> {
     }
     let parsed: ItunesResp =
         serde_json::from_str(&body).map_err(|e| format!("itunes json: {e}"))?;
-
-    // Three tiers, probed in this order. Apple's own ranking is not
-    // reliable here: searching for an album routinely returns the
-    // same-named *single* first, and that single usually has no editorial
-    // video even when the album does.
-    //
-    //   exact    "Short n' Sweet"            == requested
-    //   partial  "Short n' Sweet (Deluxe)"   contains requested — real
-    //            editions, but also "Better - Single" for "Better", which
-    //            is exactly why it ranks below exact
-    //   other    no title agreement at all — last resort, since a wrong
-    //            album beats no cover only marginally
-    let mut exact = Vec::new();
-    let mut partial = Vec::new();
-    let mut other = Vec::new();
-    for r in parsed.results {
-        let Some(url) = r.collection_view_url else {
-            continue;
-        };
-        let Some((storefront, album_id)) = parse_album_url(&url) else {
-            continue;
-        };
-        let candidate = Candidate {
-            storefront,
-            album_id,
-            album_url: url,
-        };
-        match r.collection_name.as_deref().map(|n| rank_album_name(n, title)) {
-            Some(NameMatch::Exact) => exact.push(candidate),
-            Some(NameMatch::Partial) => partial.push(candidate),
-            _ => other.push(candidate),
-        }
-    }
-    exact.extend(partial);
-    exact.extend(other);
-    Ok(exact)
+    Ok(parsed.results)
 }
 
-/// How well a catalogue title agrees with the one we asked for.
-#[derive(PartialEq)]
+/// The albums in `results` by `artist` whose title agrees with `title`,
+/// exact matches first, then the same album under an edition suffix, then
+/// titles that merely contain the one asked for.
+fn rank_candidates(results: &[ItunesResult], artist: &str, title: &str) -> Vec<Candidate> {
+    let mut ranked: Vec<(NameMatch, Candidate)> = Vec::new();
+    for r in results {
+        // A `lookup` answer starts with the artist itself.
+        if r.wrapper_type.as_deref().is_some_and(|w| w != "collection") {
+            continue;
+        }
+        if !r
+            .artist_name
+            .as_deref()
+            .is_some_and(|a| same_artist(a, artist))
+        {
+            continue;
+        }
+        let rank = match r
+            .collection_name
+            .as_deref()
+            .map(|n| rank_album_name(n, title))
+        {
+            Some(NameMatch::None) | None => continue,
+            Some(rank) => rank,
+        };
+        let Some(url) = r.collection_view_url.as_deref() else {
+            continue;
+        };
+        let Some((storefront, album_id)) = parse_album_url(url) else {
+            continue;
+        };
+        ranked.push((
+            rank,
+            Candidate {
+                storefront,
+                album_id,
+                album_url: url.to_string(),
+                rank,
+            },
+        ));
+    }
+    // The album itself and its editions go together: they share a cover.
+    // A title that merely starts the same (`Ten Redux` for `Ten`) is
+    // another record, only tried when neither exists — otherwise an album
+    // with no motion cover would take that record's.
+    let best = if ranked.iter().any(|(rank, _)| *rank < NameMatch::Partial) {
+        NameMatch::Edition
+    } else {
+        NameMatch::Partial
+    };
+    ranked.retain(|(rank, _)| *rank <= best);
+    // Stable, so Apple's own order decides within a tier.
+    ranked.sort_by_key(|(rank, _)| *rank);
+    ranked.into_iter().map(|(_, c)| c).collect()
+}
+
+/// How well a catalogue title agrees with the one we asked for, best first.
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
 enum NameMatch {
+    /// `Nevermind` for `Nevermind`.
     Exact,
+    /// The same album under another edition: `Ten` for `Ten (Remastered)`,
+    /// `Jar of Flies - EP` for `Jar of Flies`.
+    Edition,
+    /// A title that starts with the one asked for, or the single of a title
+    /// asked for as an album (`Better - Single` for `Better`): sometimes the
+    /// right release, but a single rarely carries the album's motion cover,
+    /// which is why it ranks last.
     Partial,
     None,
 }
@@ -263,18 +372,91 @@ enum NameMatch {
 /// Both sides are lowercased with punctuation flattened to spaces first, so
 /// apostrophes, dashes and stray double spaces never decide the outcome.
 fn rank_album_name(found: &str, requested: &str) -> NameMatch {
-    let found = normalize_album_name(found);
-    let requested = normalize_album_name(requested);
-    if found.is_empty() || requested.is_empty() {
+    let found_words = normalize_album_name(found);
+    let requested_words = normalize_album_name(requested);
+    if found_words.is_empty() || requested_words.is_empty() {
         return NameMatch::None;
     }
-    if found == requested {
+    if found_words == requested_words {
         return NameMatch::Exact;
     }
-    if found.contains(&requested) {
+    let found_base = normalize_album_name(&strip_edition(found));
+    let requested_base = normalize_album_name(&strip_edition(requested));
+    if !found_base.is_empty() && found_base == requested_base {
+        let single = |words: &str| words.ends_with(" single");
+        return if single(&found_words) && !single(&requested_words) {
+            NameMatch::Partial
+        } else {
+            NameMatch::Edition
+        };
+    }
+    // Leading words only: containment let `Live on Ten Legs` answer for
+    // `Ten`, the very kind of other album this ranking must refuse.
+    if found_words.starts_with(&format!("{requested_words} ")) {
         return NameMatch::Partial;
     }
     NameMatch::None
+}
+
+/// A title without what marks an edition rather than an album: bracketed
+/// or parenthesised groups (`(Remastered)`, `[2011 Remaster]`,
+/// `(30th Anniversary Super Deluxe)`) and a trailing ` - EP` / ` - Single`.
+fn strip_edition(title: &str) -> String {
+    let mut out = String::with_capacity(title.len());
+    let mut depth = 0usize;
+    for ch in title.chars() {
+        match ch {
+            '(' | '[' => depth += 1,
+            ')' | ']' => depth = depth.saturating_sub(1),
+            _ if depth == 0 => out.push(ch),
+            _ => {}
+        }
+    }
+    let trimmed = out.trim();
+    for suffix in [" - ep", " - single"] {
+        // Any case. The suffix is ASCII, so the cut is checked to land on
+        // a character boundary before a non-ASCII title is sliced.
+        let cut = trimmed.len().saturating_sub(suffix.len());
+        if trimmed.len() > suffix.len()
+            && trimmed.is_char_boundary(cut)
+            && trimmed[cut..].eq_ignore_ascii_case(suffix)
+        {
+            return trimmed[..cut].trim().to_string();
+        }
+    }
+    trimmed.to_string()
+}
+
+/// Whether a catalogue artist is the one asked for: some name is on both
+/// sides. Either credit can list several artists (`Pearl Jam; Eddie
+/// Vedder`), split on `;` only — `&` and `,` also sit inside single names
+/// (`Simon & Garfunkel`, `Tyler, The Creator`). A leading "The", case and
+/// punctuation never count.
+fn same_artist(found: &str, requested: &str) -> bool {
+    let names = |credit: &str| -> Vec<String> {
+        credit
+            .split(';')
+            .map(|name| without_the(&normalize_album_name(name)))
+            .filter(|name| !name.is_empty())
+            .collect()
+    };
+    let found = names(found);
+    names(requested).iter().any(|name| found.contains(name))
+}
+
+/// Stricter than [`same_artist`], for picking the artist whose discography
+/// is listed: the catalogue credit must be that artist alone, so a row
+/// that merely co-credits them cannot hand over another artist's id.
+fn is_artist(found: &str, requested: &str) -> bool {
+    let found = without_the(&normalize_album_name(found));
+    !found.is_empty()
+        && requested
+            .split(';')
+            .any(|name| without_the(&normalize_album_name(name)) == found)
+}
+
+fn without_the(name: &str) -> String {
+    name.strip_prefix("the ").unwrap_or(name).to_string()
 }
 
 /// Lowercase and flatten punctuation, so only the words decide a match.
@@ -367,16 +549,13 @@ fn fetch_editorial_video(
 }
 
 fn parse_editorial_video(body: &str) -> Result<Option<Editorial>, String> {
-    let v: serde_json::Value =
-        serde_json::from_str(body).map_err(|e| format!("amp json: {e}"))?;
+    let v: serde_json::Value = serde_json::from_str(body).map_err(|e| format!("amp json: {e}"))?;
     let ev = &v["data"][0]["attributes"]["editorialVideo"];
     if ev.is_null() {
         return Ok(None);
     }
     let square = ev["motionDetailSquare"]["video"].as_str();
-    let tall = ev["motionDetailTall"]["video"]
-        .as_str()
-        .map(str::to_string);
+    let tall = ev["motionDetailTall"]["video"].as_str().map(str::to_string);
     match square {
         Some(sq) => Ok(Some(Editorial {
             square_m3u8: sq.to_string(),
@@ -431,7 +610,9 @@ fn find_js_bundles(html: &str) -> Vec<String> {
             .unwrap_or(rest.len());
         let path = &rest[..end];
         if path.ends_with(".js")
-            && (path.contains("index") || path.contains("web-client") || path.contains("apple-music"))
+            && (path.contains("index")
+                || path.contains("web-client")
+                || path.contains("apple-music"))
             && !out.contains(&path.to_string())
         {
             out.push(path.to_string());
@@ -592,7 +773,9 @@ fn better(current: &Option<(u64, String)>, pixels: u64) -> bool {
 /// pixel count for picking the largest variant.
 fn parse_resolution(line: &str) -> Option<u64> {
     let after = line.split("RESOLUTION=").nth(1)?;
-    let dims = after.split(|c: char| c == ',' || c.is_whitespace()).next()?;
+    let dims = after
+        .split(|c: char| c == ',' || c.is_whitespace())
+        .next()?;
     let (w, h) = dims.split_once('x')?;
     let w: u64 = w.trim().parse().ok()?;
     let h: u64 = h.trim().parse().ok()?;
@@ -701,10 +884,14 @@ impl Cached {
     }
 }
 
-/// Normalised `motion:<artist>|<title>` cache key — lowercase, punctuation
+/// Normalised `motion2:<artist>|<title>` cache key — lowercase, punctuation
 /// collapsed to single spaces, so trivial tag differences hit the same row.
+///
+/// The `2` retires every answer cached before 0.3.4: those came from a
+/// matcher that could settle on another album by the same artist, or miss
+/// an album the search ranked out, and a cached answer is never re-checked.
 fn cache_key(artist: &str, title: &str) -> String {
-    format!("motion:{}|{}", normalise(artist), normalise(title))
+    format!("motion2:{}|{}", normalise(artist), normalise(title))
 }
 
 fn normalise(s: &str) -> String {
@@ -772,7 +959,12 @@ mod tests {
     /// old scan cost 88 % of a call's fuel on Apple's 3.3 MB bundle.
     #[test]
     fn a_jwt_is_found_in_raw_bytes() {
-        let token = format!("eyJ{}.{}.{}", "a".repeat(40), "b".repeat(40), "c".repeat(40));
+        let token = format!(
+            "eyJ{}.{}.{}",
+            "a".repeat(40),
+            "b".repeat(40),
+            "c".repeat(40)
+        );
         let mut js = b"var x=1;// ".to_vec();
         js.extend_from_slice(token.as_bytes());
         js.extend_from_slice(b";more");
@@ -787,6 +979,122 @@ mod tests {
         assert_eq!(find_jwt(long.as_bytes()), None);
     }
 
+    fn album(artist: &str, title: &str, id: &str) -> ItunesResult {
+        ItunesResult {
+            wrapper_type: Some("collection".into()),
+            collection_view_url: Some(format!("https://music.apple.com/us/album/x/{id}")),
+            collection_name: Some(title.into()),
+            artist_name: Some(artist.into()),
+            artist_id: Some(1),
+        }
+    }
+
+    fn ids(found: Vec<Candidate>) -> Vec<String> {
+        found.into_iter().map(|c| c.album_id).collect()
+    }
+
+    /// `Facelift` has no motion cover; the next result for the same artist,
+    /// `Jar of Flies`, has one and used to be shown instead.
+    #[test]
+    fn another_album_by_the_artist_is_never_a_candidate() {
+        let results = [
+            album("Alice In Chains", "Jar of Flies - EP", "1"),
+            album("Alice In Chains", "Facelift", "2"),
+        ];
+        assert_eq!(
+            ids(rank_candidates(&results, "Alice In Chains", "Facelift")),
+            ["2"]
+        );
+        assert!(rank_candidates(&results[..1], "Alice In Chains", "Facelift").is_empty());
+    }
+
+    /// "Nirvana Nevermind" returns other artists' songs called Nevermind.
+    #[test]
+    fn another_artist_is_never_a_candidate() {
+        let results = [
+            album("Dennis Lloyd", "Nevermind - Single", "1"),
+            album("Nirvana", "Nevermind (Deluxe)", "2"),
+            album("Nirvana", "Nevermind", "3"),
+        ];
+        assert_eq!(
+            ids(rank_candidates(&results, "Nirvana", "Nevermind")),
+            ["3", "2"]
+        );
+    }
+
+    /// `Ten Redux` is another record: never tried while `Ten` exists.
+    #[test]
+    fn a_partial_title_only_stands_in_for_a_missing_album() {
+        let both = [
+            album("Pearl Jam", "Ten Redux", "1"),
+            album("Pearl Jam", "Ten", "2"),
+        ];
+        assert_eq!(ids(rank_candidates(&both, "Pearl Jam", "Ten")), ["2"]);
+        assert_eq!(ids(rank_candidates(&both[..1], "Pearl Jam", "Ten")), ["1"]);
+    }
+
+    #[test]
+    fn only_the_artist_alone_can_supply_the_discography() {
+        assert!(is_artist("Pearl Jam", "Pearl Jam; Eddie Vedder"));
+        assert!(!is_artist("Eddie Vedder; Pearl Jam", "Pearl Jam"));
+        assert!(!is_artist("", ""));
+    }
+
+    #[test]
+    fn editions_rank_after_the_exact_title_and_singles_last() {
+        assert_eq!(
+            rank_album_name("Dirt (Remastered)", "Dirt (Remastered)"),
+            NameMatch::Exact
+        );
+        assert_eq!(
+            rank_album_name("Ten", "Ten (Remastered)"),
+            NameMatch::Edition
+        );
+        assert_eq!(
+            rank_album_name("Jar of Flies - EP", "Jar of Flies"),
+            NameMatch::Edition
+        );
+        assert_eq!(strip_edition("Jar of Flies - ep"), "Jar of Flies");
+        assert_eq!(strip_edition("Better - SINGLE"), "Better");
+        assert_eq!(strip_edition("Été - Single"), "Été");
+        assert_eq!(
+            rank_album_name("Better - Single", "Better"),
+            NameMatch::Partial
+        );
+        assert_eq!(
+            rank_album_name("The Colour And The Shape", "The Colour and the Shape"),
+            NameMatch::Exact
+        );
+        assert_eq!(rank_album_name("Ten Redux", "Ten"), NameMatch::Partial);
+        assert_eq!(rank_album_name("Live on Ten Legs", "Ten"), NameMatch::None);
+        assert_eq!(
+            rank_album_name("Jar of Flies - EP", "Facelift"),
+            NameMatch::None
+        );
+    }
+
+    #[test]
+    fn artists_compare_without_case_the_or_co_credits() {
+        assert!(same_artist("Alice In Chains", "Alice in Chains"));
+        assert!(same_artist("Pearl Jam", "Pearl Jam; Eddie Vedder"));
+        assert!(same_artist("The Beatles", "Beatles"));
+        assert!(same_artist("Eddie Vedder; Pearl Jam", "Pearl Jam"));
+        assert!(!same_artist("Dennis Lloyd", "Nirvana"));
+        assert!(!same_artist("", ""));
+    }
+
+    /// A `lookup` answer starts with the artist, which is not an album.
+    #[test]
+    fn the_artist_row_of_a_lookup_is_skipped() {
+        let mut artist_row = album("Pearl Jam", "Pearl Jam", "9");
+        artist_row.wrapper_type = Some("artist".into());
+        let results = [artist_row, album("Pearl Jam", "Pearl Jam", "4")];
+        assert_eq!(
+            ids(rank_candidates(&results, "Pearl Jam", "Pearl Jam")),
+            ["4"]
+        );
+    }
+
     /// A non-ASCII space after a path used to be sliced at byte 1, in the
     /// middle of its two bytes — a panic, and in wasm that is a trap that
     /// kills the whole call.
@@ -797,4 +1105,3 @@ mod tests {
         assert_eq!(found, vec!["/assets/index~ab.js".to_string()]);
     }
 }
-
