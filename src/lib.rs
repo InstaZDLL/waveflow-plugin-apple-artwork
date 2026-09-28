@@ -38,7 +38,9 @@ use bindings::waveflow::host::storage;
 
 use serde::Deserialize;
 
-const USER_AGENT: &str = concat!("WaveFlow/Apple-Artwork/", env!("CARGO_PKG_VERSION"));
+/// A plain desktop browser's: these are the web player's own endpoints,
+/// and a request that named this plugin would single it out.
+const USER_AGENT: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36";
 
 /// Cap on redirect hops we follow manually (the host disables redirects).
 const MAX_REDIRECTS: usize = 4;
