@@ -126,8 +126,44 @@ const MAX_CANDIDATES: usize = 3;
 
 /// `Ok(Some)` = motion found, `Ok(None)` = confirmed no motion (cache it),
 /// `Err` = transient failure (don't cache).
+///
+/// A title that joins two releases (`Jar of Flies / Sap`, the CD that
+/// pairs both EPs) is looked up whole first. Only when that finds no
+/// motion cover is each part tried in turn, and then only the release
+/// itself or an edition of it counts: a title that merely starts the
+/// same is too loose a match for half of someone's tag.
 fn resolve_album(artist: &str, title: &str) -> Result<Option<Motion>, String> {
-    let candidates = itunes_lookup(artist, title)?;
+    if let Some(motion) = resolve_title(artist, title, NameMatch::Partial)? {
+        return Ok(Some(motion));
+    }
+    for part in combined_parts(title) {
+        if let Some(motion) = resolve_title(artist, part, NameMatch::Edition)? {
+            return Ok(Some(motion));
+        }
+    }
+    Ok(None)
+}
+
+/// The releases a title joins with ` / `, or nothing for a single title.
+/// The spaces are required: a bare slash sits inside ordinary titles
+/// (`Love/Hate`, `AC/DC`).
+fn combined_parts(title: &str) -> Vec<&str> {
+    let parts: Vec<&str> = title
+        .split(" / ")
+        .map(str::trim)
+        .filter(|part| !normalize_album_name(part).is_empty())
+        .collect();
+    if parts.len() < 2 {
+        return Vec::new();
+    }
+    parts
+}
+
+/// One lookup of [`resolve_album`], keeping catalogue titles that match at
+/// `loosest` or better.
+fn resolve_title(artist: &str, title: &str, loosest: NameMatch) -> Result<Option<Motion>, String> {
+    let mut candidates = itunes_lookup(artist, title)?;
+    candidates.retain(|candidate| candidate.rank <= loosest);
     if candidates.is_empty() {
         // No Apple catalogue match — treat as a confirmed miss so we don't
         // re-search every track change for an album Apple doesn't carry.
@@ -1022,6 +1058,31 @@ mod tests {
             ids(rank_candidates(&results, "Nirvana", "Nevermind")),
             ["3", "2"]
         );
+    }
+
+    /// The CD pairing both EPs is tagged as one title; each part is
+    /// looked up on its own once the whole title finds nothing.
+    #[test]
+    fn a_combined_title_is_split_on_a_spaced_slash_only() {
+        assert_eq!(
+            combined_parts("Jar of Flies / Sap"),
+            ["Jar of Flies", "Sap"]
+        );
+        assert_eq!(combined_parts("A / B / C"), ["A", "B", "C"]);
+        assert!(combined_parts("Jar of Flies").is_empty());
+        assert!(combined_parts("Love/Hate").is_empty());
+        // A slash with nothing usable on one side is not two releases.
+        assert!(combined_parts("Sap / ").is_empty());
+        assert!(combined_parts(" / !!").is_empty());
+    }
+
+    /// A part of a combined title only takes the release itself or an
+    /// edition of it: `Sap` must not answer with `Sap Sessions`.
+    #[test]
+    fn a_part_is_not_matched_by_a_title_that_only_starts_the_same() {
+        assert_eq!(rank_album_name("Sap - EP", "Sap"), NameMatch::Edition);
+        assert_eq!(rank_album_name("Sap Sessions", "Sap"), NameMatch::Partial);
+        assert!(NameMatch::Partial > NameMatch::Edition);
     }
 
     /// `Ten Redux` is another record: never tried while `Ten` exists.
