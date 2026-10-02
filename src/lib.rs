@@ -951,8 +951,12 @@ fn normalise(s: &str) -> String {
 }
 
 fn read_cache(key: &str) -> Option<Cached> {
-    let raw = read_state_str(key)?;
-    let v: serde_json::Value = serde_json::from_str(&raw).ok()?;
+    parse_cached(&read_state_str(key)?)
+}
+
+/// A stored cache value, or `None` when it is unreadable or stale.
+fn parse_cached(raw: &str) -> Option<Cached> {
+    let v: serde_json::Value = serde_json::from_str(raw).ok()?;
     if v.get("n").is_some() {
         return Some(Cached::None);
     }
@@ -1082,6 +1086,27 @@ mod tests {
             ids(rank_candidates(&results, "Nirvana", "Nevermind")),
             ["3", "2"]
         );
+    }
+
+    /// A stored answer holding a pre-0.3.7 URL, square or tall, is a miss;
+    /// a good one and a stored miss read back as they were written.
+    #[test]
+    fn a_stale_cached_url_is_resolved_again() {
+        let stale_square = r#"{"s":"https://x/P_1080x1080_--.mp4"}"#;
+        let stale_tall = r#"{"s":"https://x/P_1080x1080_-.mp4","t":"https://x/T_--.mp4"}"#;
+        assert!(parse_cached(stale_square).is_none());
+        assert!(parse_cached(stale_tall).is_none());
+
+        let good = r#"{"s":"https://x/P_1080x1080_-.mp4","t":"https://x/T-.mp4"}"#;
+        match parse_cached(good) {
+            Some(Cached::Motion(m)) => {
+                assert_eq!(m.square, "https://x/P_1080x1080_-.mp4");
+                assert_eq!(m.tall.as_deref(), Some("https://x/T-.mp4"));
+            }
+            _ => panic!("a valid cached motion cover was dropped"),
+        }
+        assert!(matches!(parse_cached(r#"{"n":1}"#), Some(Cached::None)));
+        assert!(parse_cached("not json").is_none());
     }
 
     /// A URL cached before the fix is recognised, a valid one is not.
