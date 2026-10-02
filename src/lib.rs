@@ -787,10 +787,19 @@ fn resolve_m3u8_to_mp4(m3u8_url: &str, prefer_hevc: bool) -> Result<String, Stri
 /// Derive the progressive mp4 sibling of an HLS variant playlist URL:
 /// `…_1080x1080.m3u8` → `…_1080x1080-.mp4`. Returns `None` for a URL that
 /// isn't a `.m3u8` (nothing to swap).
+///
+/// The mp4 always ends in a single `-` before `.mp4`. Most covers name the
+/// playlist without it, but some already carry it (`…_1080x1080_-.m3u8`,
+/// every variant of *Dirt*), and appending another gave `_--.mp4`, a 404
+/// on each rendition: the cover never showed, whatever the codec.
 fn derive_progressive_mp4(variant_url: &str) -> Option<String> {
     let path = variant_url.split('?').next().unwrap_or(variant_url);
     let stem = path.strip_suffix(".m3u8")?;
-    Some(format!("{stem}-.mp4"))
+    Some(if stem.ends_with('-') {
+        format!("{stem}.mp4")
+    } else {
+        format!("{stem}-.mp4")
+    })
 }
 
 /// True when an `#EXT-X-STREAM-INF` line's `CODECS="…"` attribute contains
@@ -942,14 +951,33 @@ fn normalise(s: &str) -> String {
 }
 
 fn read_cache(key: &str) -> Option<Cached> {
-    let raw = read_state_str(key)?;
-    let v: serde_json::Value = serde_json::from_str(&raw).ok()?;
+    parse_cached(&read_state_str(key)?)
+}
+
+/// A stored cache value, or `None` when it is unreadable or stale.
+fn parse_cached(raw: &str) -> Option<Cached> {
+    let v: serde_json::Value = serde_json::from_str(raw).ok()?;
     if v.get("n").is_some() {
         return Some(Cached::None);
     }
     let square = v.get("s")?.as_str()?.to_string();
     let tall = v.get("t").and_then(|x| x.as_str()).map(str::to_string);
+    // Before 0.3.7 a playlist already ending in `-` gave a `…_--.mp4` that
+    // does not exist (see `derive_progressive_mp4`), and it was cached like
+    // any other answer. Read as a miss, so the album is resolved again.
+    if [Some(&square), tall.as_ref()]
+        .into_iter()
+        .flatten()
+        .any(|url| is_double_dash_mp4(url))
+    {
+        return None;
+    }
     Some(Cached::Motion(Motion { square, tall }))
+}
+
+/// A URL from the pre-0.3.7 derivation that never existed.
+fn is_double_dash_mp4(url: &str) -> bool {
+    url.split('?').next().unwrap_or(url).ends_with("--.mp4")
 }
 
 fn write_cache(key: &str, cached: &Cached) {
@@ -1058,6 +1086,53 @@ mod tests {
             ids(rank_candidates(&results, "Nirvana", "Nevermind")),
             ["3", "2"]
         );
+    }
+
+    /// A stored answer holding a pre-0.3.7 URL, square or tall, is a miss;
+    /// a good one and a stored miss read back as they were written.
+    #[test]
+    fn a_stale_cached_url_is_resolved_again() {
+        let stale_square = r#"{"s":"https://x/P_1080x1080_--.mp4"}"#;
+        let stale_tall = r#"{"s":"https://x/P_1080x1080_-.mp4","t":"https://x/T_--.mp4"}"#;
+        assert!(parse_cached(stale_square).is_none());
+        assert!(parse_cached(stale_tall).is_none());
+
+        let good = r#"{"s":"https://x/P_1080x1080_-.mp4","t":"https://x/T-.mp4"}"#;
+        match parse_cached(good) {
+            Some(Cached::Motion(m)) => {
+                assert_eq!(m.square, "https://x/P_1080x1080_-.mp4");
+                assert_eq!(m.tall.as_deref(), Some("https://x/T-.mp4"));
+            }
+            _ => panic!("a valid cached motion cover was dropped"),
+        }
+        assert!(matches!(parse_cached(r#"{"n":1}"#), Some(Cached::None)));
+        assert!(parse_cached("not json").is_none());
+    }
+
+    /// A URL cached before the fix is recognised, a valid one is not.
+    #[test]
+    fn a_cached_double_dash_url_is_stale() {
+        assert!(is_double_dash_mp4("https://x/P2_sdr_1080x1080_--.mp4"));
+        assert!(!is_double_dash_mp4("https://x/P2_sdr_1080x1080_-.mp4"));
+        assert!(!is_double_dash_mp4("https://x/P1_sdr_768x768-.mp4"));
+    }
+
+    /// Both playlist spellings Apple uses lead to the same `-.mp4` form.
+    #[test]
+    fn a_variant_already_ending_in_a_dash_gets_no_second_one() {
+        assert_eq!(
+            derive_progressive_mp4("https://x/P1_video_sdr_768x768.m3u8").as_deref(),
+            Some("https://x/P1_video_sdr_768x768-.mp4")
+        );
+        assert_eq!(
+            derive_progressive_mp4("https://x/P2_video_sdr_2160x2160_-.m3u8").as_deref(),
+            Some("https://x/P2_video_sdr_2160x2160_-.mp4")
+        );
+        assert_eq!(
+            derive_progressive_mp4("https://x/P2_video_sdr_1080x1080_-.m3u8?a=1").as_deref(),
+            Some("https://x/P2_video_sdr_1080x1080_-.mp4")
+        );
+        assert_eq!(derive_progressive_mp4("https://x/P3.mp4"), None);
     }
 
     /// The CD pairing both EPs is tagged as one title; each part is
